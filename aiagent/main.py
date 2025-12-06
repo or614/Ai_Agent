@@ -70,31 +70,49 @@ available_functions = types.Tool(
     function_declarations=[schema_get_files_info, schema_get_file_content, schema_run_python_file, schema_write_file],
 )
 
-response = client.models.generate_content(
-    model="gemini-2.5-flash",
-    contents=messages, 
-    config=types.GenerateContentConfig(
-        tools=[available_functions], system_instruction=system_prompt
-    ),
-    )
+counter = 20
+for _ in range(20):
 
-if response.usage_metadata != None:
-    if args.verbose == True:
-        prompt_tokens = response.usage_metadata.prompt_token_count
-        response_tokens = response.usage_metadata.candidates_token_count
-        print(f"User prompt: {args.user_prompt}\nPrompt tokens: {prompt_tokens}\nResponse tokens: {response_tokens}\nResponse: \n{response.text}")
-    else:
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=messages, 
+        config=types.GenerateContentConfig(
+            tools=[available_functions], system_instruction=system_prompt
+        ),
+        )
+
+    if response.text != None and response.function_calls == None:
+        print("Final response:")
         print(response.text)
+        break
+
+
+    for candidate in response.candidates:
+        messages.append(candidate.content)
+
+
+        
+    if response.function_calls != None:
+        func_list = []
+        for function in response.function_calls:
+            print(f"Calling function: {function.name}({function.args})")
+            function_result = call_function(function, args.verbose)
+            try:
+                result_response = function_result.parts[0].function_response.response
+            except Exception as e:
+                raise Exception(f"Fatal Error: {e}")
+            func_list.append(function_result.parts[0])
+            if args.verbose == True:
+                print(f"-> {function_result.parts[0].function_response.response}")
+        
+        messages.append(
+        types.Content(
+            role="user",
+            parts=func_list,
+        )
+    )
     
-if response.function_calls != None:
-    func_list = []
-    for function in response.function_calls:
-        print(f"Calling function: {function.name}({function.args})")
-        function_result = call_function(function, args.verbose)  # fix the typo here!
-        try:
-            result_response = function_result.parts[0].function_response.response
-        except Exception as e:
-            raise Exception(f"Fatal Error: {e}")
-        func_list.append(function_result.parts[0])
-        if args.verbose == True:
-            print(f"-> {function_result.parts[0].function_response.response}")
+    if response.text and not response.function_calls:
+        print("Final response:")
+        print(response.text)
+        break
